@@ -130,43 +130,33 @@ class NexGame extends HTMLElement {
         if (!this._isValid || !this._htmlContent) return;
         if (this.shadowRoot.querySelector("iframe")) return;
 
-        // De fix: base wordt omgezet naar een String via String(base) om .startsWith te garanderen
-        const urlPatchScript = `
-            <script>
-            (function() {
-                const OriginalURL = window.URL;
-                window.URL = function(url, base) {
-                    if (base) {
-                        const baseStr = String(base);
-                        if (baseStr.startsWith('about:') || baseStr.startsWith('srcdoc')) {
-                            base = window.location.origin + '/';
-                        }
-                    }
-                    try {
-                        return new OriginalURL(url, base);
-                    } catch(e) {
-                        return new OriginalURL(url, window.location.origin + '/');
-                    }
-                };
-                window.URL.prototype = OriginalURL.prototype;
-                window.URL.createObjectURL = OriginalURL.createObjectURL;
-                window.URL.revokeObjectURL = OriginalURL.revokeObjectURL;
-            })();
-            </script>
-        `;
-
-        let finalContent = this._htmlContent;
-        if (finalContent.includes("<head>")) {
-            finalContent = finalContent.replace("<head>", `<head>${urlPatchScript}`);
-        } else {
-            finalContent = urlPatchScript + finalContent;
-        }
-
         const frame = document.createElement("iframe");
         frame.sandbox = "allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-pointer-lock allow-downloads";
         frame.allow = "autoplay; fullscreen; gamepad; pointer-lock";
-        frame.srcdoc = finalContent;
+        
+        // We zetten de src expliciet op een lege pagina binnen dezelfde origin context
+        frame.src = "about:blank"; 
+        
         this.shadowRoot.appendChild(frame);
+
+        // Zodra het iframe is aangehangen, openen we de document stream van het iframe.
+        // Dit bootst het exacte gedrag van document.write na, maar dan geïsoleerd in de iframe context,
+        // waardoor alle cross-origin restricties, relatieve URL's en localStorage scripts wél werken.
+        try {
+            const doc = frame.contentWindow.document || frame.contentDocument;
+            doc.open();
+            doc.write(this._htmlContent);
+            doc.close();
+        } catch (err) {
+            console.error("[NEX ERROR] Safe injection failed, retrying via fallback context:", err);
+            // Mocht de browser de synchrone write direct blokkeren, vallen we terug op de onload handler
+            frame.onload = () => {
+                const doc = frame.contentWindow.document || frame.contentDocument;
+                doc.open();
+                doc.write(this._htmlContent);
+                doc.close();
+            };
+        }
     }
 }
 
