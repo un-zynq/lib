@@ -133,47 +133,8 @@ class NexGame extends HTMLElement {
         const frame = document.createElement("iframe");
         frame.sandbox = "allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-pointer-lock allow-downloads";
         frame.allow = "autoplay; fullscreen; gamepad; pointer-lock";
-        frame.src = "about:blank"; 
-        
+        frame.srcdoc = this._htmlContent;
         this.shadowRoot.appendChild(frame);
-
-        frame.onload = () => {
-            try {
-                const destDoc = frame.contentWindow.document || frame.contentDocument;
-                
-                // 1. Parse de HTML string op de moderne manier naar een virtueel DOM object
-                const parser = new DOMParser();
-                const srcDoc = parser.parseFromString(this._htmlContent, "text/html");
-
-                // 2. Maak de standaard lege head en body van about:blank leeg
-                destDoc.head.innerHTML = "";
-                destDoc.body.innerHTML = "";
-
-                // 3. Verhuis alle nodes op een schone manier naar de iframe context
-                Array.from(srcDoc.head.childNodes).forEach(node => {
-                    const adopted = destDoc.adoptNode(node);
-                    destDoc.head.appendChild(adopted);
-                });
-
-                Array.from(srcDoc.body.childNodes).forEach(node => {
-                    const adopted = destDoc.adoptNode(node);
-                    destDoc.body.appendChild(adopted);
-                });
-
-                // 4. Browsers voeren scripts die via appendChild worden geïnjecteerd soms niet uit. 
-                // We forceren hier de executie van scripts op een geldige manier.
-                const scripts = destDoc.querySelectorAll("script");
-                scripts.forEach(oldScript => {
-                    const newScript = destDoc.createElement("script");
-                    Array.from(oldScript.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value));
-                    newScript.appendChild(destDoc.createTextNode(oldScript.innerHTML));
-                    oldScript.parentNode.replaceChild(newScript, oldScript);
-                });
-
-            } catch (err) {
-                console.error("[NEX ERROR] Modern DOM injection failed:", err);
-            }
-        };
     }
 }
 
