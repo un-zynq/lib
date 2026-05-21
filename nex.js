@@ -130,25 +130,34 @@ class NexGame extends HTMLElement {
         if (!this._isValid || !this._htmlContent) return;
         if (this.shadowRoot.querySelector("iframe")) return;
 
-        let finalContent = this._htmlContent;
+        // Geen base URL hacks meer in de HTML. 
+        // We injecteren in plaats daarvan een flinterdun script dat de URL constructor repareert voor games die crashen op about:srcdoc.
+        const urlPatchScript = `
+            <script>
+            (function() {
+                const OriginalURL = window.URL;
+                window.URL = function(url, base) {
+                    if (base && (base.startsWith('about:') || base.startsWith('srcdoc'))) {
+                        base = window.location.origin + '/';
+                    }
+                    try {
+                        return new OriginalURL(url, base);
+                    } catch(e) {
+                        return new OriginalURL(url, window.location.origin + '/');
+                    }
+                };
+                window.URL.prototype = OriginalURL.prototype;
+                window.URL.createObjectURL = OriginalURL.createObjectURL;
+                window.URL.revokeObjectURL = OriginalURL.revokeObjectURL;
+            })();
+            </script>
+        `;
 
-        if (this._htmlContent.includes("src.part")) {
-            const gameBaseUrl = `${BASE_CDN}${this.alias}/`;
-            const baseTag = `<base href="${gameBaseUrl}">`;
-            
-            if (finalContent.includes("<head>")) {
-                finalContent = finalContent.replace("<head>", `<head>${baseTag}`);
-            } else {
-                finalContent = baseTag + finalContent;
-            }
+        let finalContent = this._htmlContent;
+        if (finalContent.includes("<head>")) {
+            finalContent = finalContent.replace("<head>", `<head>${urlPatchScript}`);
         } else {
-            const localBaseTag = `<base href="${window.location.origin}/">`;
-            
-            if (finalContent.includes("<head>")) {
-                finalContent = finalContent.replace("<head>", `<head>${localBaseTag}`);
-            } else {
-                finalContent = localBaseTag + finalContent;
-            }
+            finalContent = urlPatchScript + finalContent;
         }
 
         const frame = document.createElement("iframe");
