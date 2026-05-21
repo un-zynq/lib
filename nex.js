@@ -159,8 +159,13 @@
             const gameViewportFrame = document.createElement("iframe");
             gameViewportFrame.sandbox = "allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-pointer-lock allow-downloads";
             gameViewportFrame.allow = "autoplay; fullscreen; gamepad; pointer-lock";
-            gameViewportFrame.srcdoc = this._gameHtmlContent;
+            
             this.shadowRoot.appendChild(gameViewportFrame);
+
+            const frameDocument = gameViewportFrame.contentDocument || gameViewportFrame.contentWindow.document;
+            frameDocument.open();
+            frameDocument.write(this._gameHtmlContent);
+            frameDocument.close();
         }
     }
 
