@@ -130,10 +130,31 @@ class NexGame extends HTMLElement {
         if (!this._isValid || !this._htmlContent) return;
         if (this.shadowRoot.querySelector("iframe")) return;
 
+        let finalContent = this._htmlContent;
+
+        if (this._htmlContent.includes("src.part")) {
+            const gameBaseUrl = `${BASE_CDN}${this.alias}/`;
+            const baseTag = `<base href="${gameBaseUrl}">`;
+            
+            if (finalContent.includes("<head>")) {
+                finalContent = finalContent.replace("<head>", `<head>${baseTag}`);
+            } else {
+                finalContent = baseTag + finalContent;
+            }
+        } else {
+            const localBaseTag = `<base href="${window.location.origin}/">`;
+            
+            if (finalContent.includes("<head>")) {
+                finalContent = finalContent.replace("<head>", `<head>${localBaseTag}`);
+            } else {
+                finalContent = localBaseTag + finalContent;
+            }
+        }
+
         const frame = document.createElement("iframe");
         frame.sandbox = "allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-pointer-lock allow-downloads";
         frame.allow = "autoplay; fullscreen; gamepad; pointer-lock";
-        frame.srcdoc = this._htmlContent;
+        frame.srcdoc = finalContent;
         this.shadowRoot.appendChild(frame);
     }
 }
