@@ -130,15 +130,17 @@ class NexGame extends HTMLElement {
         if (!this._isValid || !this._htmlContent) return;
         if (this.shadowRoot.querySelector("iframe")) return;
 
-        // Geen base URL hacks meer in de HTML. 
-        // We injecteren in plaats daarvan een flinterdun script dat de URL constructor repareert voor games die crashen op about:srcdoc.
+        // De fix: base wordt omgezet naar een String via String(base) om .startsWith te garanderen
         const urlPatchScript = `
             <script>
             (function() {
                 const OriginalURL = window.URL;
                 window.URL = function(url, base) {
-                    if (base && (base.startsWith('about:') || base.startsWith('srcdoc'))) {
-                        base = window.location.origin + '/';
+                    if (base) {
+                        const baseStr = String(base);
+                        if (baseStr.startsWith('about:') || baseStr.startsWith('srcdoc')) {
+                            base = window.location.origin + '/';
+                        }
                     }
                     try {
                         return new OriginalURL(url, base);
