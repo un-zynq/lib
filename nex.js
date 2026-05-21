@@ -1,141 +1,168 @@
-const BASE_CDN = "https://nxyderrr-assets.pages.dev/";
+(() => {
+    const ASSET_DISTRIBUTION_NETWORK_URL = "https://nxyderrr-assets.pages.dev/";
 
-window.nex = new Proxy({}, {
-    get(target, gid) {
-        if (!target[gid]) {
-            target[gid] = {
-                _earlyListeners: {},
-                _element: null,
-                on(event, callback) {
-                    if (this._element) {
-                        this._element._registerListener(event, callback);
-                    } else {
-                        if (!this._earlyListeners[event]) this._earlyListeners[event] = [];
-                        this._earlyListeners[event].push(callback);
+    window.nex = new Proxy({}, {
+        get(registryMap, gameIdentifier) {
+            if (!registryMap[gameIdentifier]) {
+                registryMap[gameIdentifier] = {
+                    _earlyListeners: {},
+                    _element: null,
+                    _earlyStartRequested: false,
+                    on(eventName, eventCallback) {
+                        if (this._element) {
+                            this._element._registerListener(eventName, eventCallback);
+                        } else {
+                            if (!this._earlyListeners[eventName]) {
+                                this._earlyListeners[eventName] = [];
+                            }
+                            this._earlyListeners[eventName].push(eventCallback);
+                        }
+                    },
+                    start() {
+                        if (this._element) {
+                            this._element.start();
+                        } else {
+                            this._earlyStartRequested = true;
+                        }
                     }
-                },
-                start() {
-                    if (this._element) this._element.start();
-                }
-            };
+                };
+            }
+            return registryMap[gameIdentifier];
         }
-        return target[gid];
-    }
-});
+    });
 
-class NexGame extends HTMLElement {
-    static get observedAttributes() { return ["alias", "gid"]; }
-    constructor() {
-        super();
-        this._htmlContent = "";
-        this._listeners = {};
-        this._isValid = true;
-        this.attachShadow({ mode: "open" });
-    }
-
-    get alias() { return this.getAttribute("alias"); }
-    get gid() { return this.getAttribute("gid"); }
-
-    connectedCallback() {
-        this.shadowRoot.innerHTML = `<style>:host{display:block;width:100%;height:100%;background:#000;position:relative}iframe{width:100%;height:100%;border:0;display:block}</style>`;
+    class NexGame extends HTMLElement {
+        static get observedAttributes() { return ["alias", "gid"]; }
         
-        if (!this.gid) return;
-
-        const registry = window.nex[this.gid];
-
-        if (registry._element) {
-            this._isValid = false;
-            console.error(`[NEX ERROR] gID "${this.gid}" already in use.`);
-            this.shadowRoot.innerHTML = `<style>:host{display:block;background:#300;color:#fff;padding:10px}</style><div>[NEX ERROR] Duplicate gID: ${this.gid}</div>`;
-            return;
+        constructor() {
+            super();
+            this._gameHtmlContent = "";
+            this._registeredListeners = {};
+            this._isComponentValid = true;
+            this._executionPending = false;
+            this.attachShadow({ mode: "open" });
         }
 
-        registry._element = this;
+        get alias() { return this.getAttribute("alias"); }
+        get gid() { return this.getAttribute("gid"); }
 
-        if (registry._earlyListeners) {
-            for (const event in registry._earlyListeners) {
-                registry._earlyListeners[event].forEach(callback => {
-                    this._registerListener(event, callback);
-                });
-            }
-            delete registry._earlyListeners;
-        }
-
-        if (this.alias) {
-            if (document.readyState === "loading") {
-                document.addEventListener("DOMContentLoaded", () => this.init());
-            } else {
-                setTimeout(() => this.init(), 0);
-            }
-        }
-    }
-
-    disconnectedCallback() {
-        if (this._isValid && this.gid && window.nex[this.gid]) {
-            delete window.nex[this.gid];
-        }
-    }
-
-    _registerListener(event, callback) {
-        if (!this._listeners[event]) this._listeners[event] = [];
-        this._listeners[event].push(callback);
-    }
-
-    _trigger(event, data = {}) {
-        if (!this._isValid) return;
-        if (this._listeners[event]) {
-            this._listeners[event].forEach(callback => callback(data));
-        }
-    }
-
-    async init() {
-        if (!this._isValid) return;
-        try {
-            this._trigger("progress", { progress: 5 });
+        connectedCallback() {
+            this.shadowRoot.innerHTML = `<style>:host{display:block;width:100%;height:100%;background:#000;position:relative}iframe{width:100%;height:100%;border:0;display:block}</style>`;
             
-            const resList = await fetch(`${BASE_CDN}game_list.json`);
-            const data = await resList.json();
-            
-            const chunked = data[0] || [];
-            const streamed = data[1] || [];
+            if (!this.gid) return;
 
-            if (streamed.includes(this.alias)) {
-                this._trigger("progress", { progress: 30 });
-                const res = await fetch(`${BASE_CDN}external/${this.alias}.html`);
-                this._htmlContent = await res.text();
-            } 
-            else if (chunked.includes(this.alias)) {
-                const nrRes = await fetch(`${BASE_CDN}${this.alias}/nr.txt`);
-                const total = parseInt(await nrRes.text(), 10);
+            const gameRegistry = window.nex[this.gid];
 
-                for (let i = 1; i <= total; i++) {
-                    const part = await fetch(`${BASE_CDN}${this.alias}/src.part${i}.html`);
-                    this._htmlContent += await part.text();
-                    
-                    const pct = Math.floor(10 + (i / total) * 85);
-                    this._trigger("progress", { progress: pct });
+            if (gameRegistry._element) {
+                this._isComponentValid = false;
+                console.error(`[NEX ERROR] gID "${this.gid}" already in use.`);
+                this.shadowRoot.innerHTML = `<style>:host{display:block;background:#300;color:#fff;padding:10px}</style><div>[NEX ERROR] Duplicate gID: ${this.gid}</div>`;
+                return;
+            }
+
+            gameRegistry._element = this;
+
+            if (gameRegistry._earlyStartRequested) {
+                this._executionPending = true;
+                delete gameRegistry._earlyStartRequested;
+            }
+
+            if (gameRegistry._earlyListeners) {
+                for (const eventName in gameRegistry._earlyListeners) {
+                    gameRegistry._earlyListeners[eventName].forEach(eventCallback => {
+                        this._registerListener(eventName, eventCallback);
+                    });
                 }
-            } else {
-                throw new Error("Game not found in manifest");
+                delete gameRegistry._earlyListeners;
             }
 
-            this._trigger("progress", { progress: 100 });
-            this._trigger("ready");
-        } catch (e) {
-            this._trigger("error", { message: e.message });
+            if (this.alias) {
+                if (document.readyState === "loading") {
+                    document.addEventListener("DOMContentLoaded", () => this.initializeGameFetch());
+                } else {
+                    setTimeout(() => this.initializeGameFetch(), 0);
+                }
+            }
+        }
+
+        disconnectedCallback() {
+            if (this._isComponentValid && this.gid && window.nex[this.gid]) {
+                delete window.nex[this.gid];
+            }
+        }
+
+        _registerListener(eventName, eventCallback) {
+            if (!this._registeredListeners[eventName]) {
+                this._registeredListeners[eventName] = [];
+            }
+            this._registeredListeners[eventName].push(eventCallback);
+        }
+
+        _dispatchInternalEvent(eventName, eventData = {}) {
+            if (!this._isComponentValid) return;
+            if (this._registeredListeners[eventName]) {
+                this._registeredListeners[eventName].forEach(eventCallback => eventCallback(eventData));
+            }
+        }
+
+        async initializeGameFetch() {
+            if (!this._isComponentValid) return;
+            try {
+                this._dispatchInternalEvent("progress", { progress: 5 });
+                
+                const manifestResponse = await fetch(`${ASSET_DISTRIBUTION_NETWORK_URL}game_list.json`);
+                const manifestData = await manifestResponse.json();
+                
+                const chunkedAssets = manifestData[0] || [];
+                const streamedAssets = manifestData[1] || [];
+
+                if (streamedAssets.includes(this.alias)) {
+                    this._dispatchInternalEvent("progress", { progress: 30 });
+                    const standaloneResponse = await fetch(`${ASSET_DISTRIBUTION_NETWORK_URL}external/${this.alias}.html`);
+                    this._gameHtmlContent = await standaloneResponse.text();
+                } 
+                else if (chunkedAssets.includes(this.alias)) {
+                    const totalChunksResponse = await fetch(`${ASSET_DISTRIBUTION_NETWORK_URL}${this.alias}/nr.txt`);
+                    const totalChunksCount = parseInt(await totalChunksResponse.text(), 10);
+
+                    for (let currentChunkIndex = 1; currentChunkIndex <= totalChunksCount; currentChunkIndex++) {
+                        const chunkResponse = await fetch(`${ASSET_DISTRIBUTION_NETWORK_URL}${this.alias}/src.part${currentChunkIndex}.html`);
+                        this._gameHtmlContent += await chunkResponse.text();
+                        
+                        const calculatedProgress = Math.floor(10 + (currentChunkIndex / totalChunksCount) * 85);
+                        this._dispatchInternalEvent("progress", { progress: calculatedProgress });
+                    }
+                } else {
+                    throw new Error("Game not found in manifest");
+                }
+
+                this._dispatchInternalEvent("progress", { progress: 100 });
+                this._dispatchInternalEvent("ready");
+
+                if (this._executionPending) {
+                    this.start();
+                }
+            } catch (fetchError) {
+                this._dispatchInternalEvent("error", { message: fetchError.message });
+            }
+        }
+
+        start() {
+            if (!this._isComponentValid) return;
+            if (this.shadowRoot.querySelector("iframe")) return;
+
+            if (!this._gameHtmlContent) {
+                this._executionPending = true;
+                return;
+            }
+
+            const gameViewportFrame = document.createElement("iframe");
+            gameViewportFrame.sandbox = "allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-pointer-lock allow-downloads";
+            gameViewportFrame.allow = "autoplay; fullscreen; gamepad; pointer-lock";
+            gameViewportFrame.srcdoc = this._gameHtmlContent;
+            this.shadowRoot.appendChild(gameViewportFrame);
         }
     }
 
-    start() {
-        if (!this._isValid || !this._htmlContent) return;
-        if (this.shadowRoot.querySelector("iframe")) return;
-
-        const frame = document.createElement("iframe");
-        frame.sandbox = "allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-pointer-lock allow-downloads";
-        frame.allow = "autoplay; fullscreen; gamepad; pointer-lock";
-        frame.srcdoc = this._htmlContent;
-        this.shadowRoot.appendChild(frame);
-    }
-}
-
-customElements.define("nex-game", NexGame);
+    customElements.define("nex-game", NexGame);
+})();
